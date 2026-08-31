@@ -1,0 +1,5 @@
+# Local/runtime files for the BanRep scraper
+/Bank America Data/.DS_Store
+/Bank America Data/.venv/
+/Bank America Data/__pycache__/
+/Bank America Data/banrep_subastas_administradas.csv
