@@ -21,22 +21,41 @@ EXPORT_URL = (
     "estadisticaEconomicaRestService/exportarReporteExcel"
 )
 
-# This is the table selected by default at the supplied URL:
-# "TES corto plazo en pesos colombianos".
-DEFAULT_REPORT_PATH = (
+REPORT_DIRECTORY = (
     "/shared/Estadisticas_Banco_de_la_Republica/"
     "6_Sector_Publico_y_Deuda_Publica/5_Subastas_administradas(TES)/"
-    "1_Subastas_administradas_TES_corto_plazo_en_pesos_colombianos_iqy"
 )
+
+# One official CSV export per tab shown along the bottom of the dashboard.
+REPORT_PATHS = {
+    "TES corto plazo en pesos colombianos": (
+        REPORT_DIRECTORY
+        + "1_Subastas_administradas_TES_corto_plazo_en_pesos_colombianos_iqy"
+    ),
+    "TES largo plazo en pesos colombianos": (
+        REPORT_DIRECTORY
+        + "1_Subastas_administradas_TES_largo_plazo_en_pesos_colombianos_iqy"
+    ),
+    "TES Verdes": REPORT_DIRECTORY + "1_Subastas_administradas_TES_Verdes_iqy",
+    "TES en UVR": REPORT_DIRECTORY + "1_Subastas_administradas_TES_en_UVR_iqy",
+    "TES de regulación de liquidez": (
+        REPORT_DIRECTORY
+        + "1_Subastas_administradas_TES_de_regulación_de_liquidez_iqy"
+    ),
+}
+
+DEFAULT_REPORT_PATH = REPORT_PATHS["TES corto plazo en pesos colombianos"]
 
 
 def scrape_subastas(
     report_path: str = DEFAULT_REPORT_PATH,
     *,
     timeout: int = 120,
+    session: requests.Session | None = None,
 ) -> pd.DataFrame:
-    """Return the complete BanRep report as a DataFrame."""
-    response = requests.get(
+    """Return one complete BanRep report as a DataFrame."""
+    client = session or requests
+    response = client.get(
         EXPORT_URL,
         params={"reportPath": report_path, "formato": "csv"},
         headers={
@@ -66,9 +85,30 @@ def scrape_subastas(
     return df
 
 
+def scrape_all_subastas(*, timeout: int = 120) -> pd.DataFrame:
+    """Download all five dashboard tabs into one combined DataFrame.
+
+    Since the tabs do not have exactly the same columns, pandas creates the
+    union of their schemas and fills non-applicable values with blanks.
+    """
+    frames = []
+    with requests.Session() as session:
+        for tab_name, report_path in REPORT_PATHS.items():
+            print(f"Downloading: {tab_name}")
+            tab_df = scrape_subastas(
+                report_path,
+                timeout=timeout,
+                session=session,
+            )
+            tab_df.insert(0, "Dashboard tab", tab_name)
+            frames.append(tab_df)
+
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Download BanRep's administered TES auctions table."
+        description="Download every tab in BanRep's administered TES auctions report."
     )
     parser.add_argument(
         "-o",
@@ -79,16 +119,21 @@ def main() -> None:
     )
     parser.add_argument(
         "--report-path",
-        default=DEFAULT_REPORT_PATH,
-        help="Oracle report path, if you want a different dashboard table",
+        help="Download only this Oracle report path instead of all dashboard tabs",
     )
     args = parser.parse_args()
 
-    df = scrape_subastas(args.report_path)
+    if args.report_path:
+        df = scrape_subastas(args.report_path)
+    else:
+        df = scrape_all_subastas()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(args.output, index=False, encoding="utf-8-sig")
 
     print(f"Downloaded {len(df):,} rows and {len(df.columns):,} columns")
+    if "Dashboard tab" in df.columns:
+        print("Rows by tab:")
+        print(df["Dashboard tab"].value_counts(sort=False).to_string())
     print(f"Saved to: {args.output.resolve()}")
     print(df.head().to_string(index=False))
 
