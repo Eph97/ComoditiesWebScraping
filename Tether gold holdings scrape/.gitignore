@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.DS_Store
+outputs/
+data/reports/
+data/latest.json
+data/report_index.json
+data/tether_supply_raw.json
+data/tether_supply_source.json
